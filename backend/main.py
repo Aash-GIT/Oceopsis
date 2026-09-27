@@ -11,6 +11,8 @@ import numpy as np
 import io
 import os
 from functools import lru_cache
+import pyarrow.parquet as pq
+import fsspec
 
 app = FastAPI()
 
@@ -134,6 +136,35 @@ def load_cyclone_data():
     return cyclone_df
 
 
+def get_argo_parquet():
+    if USE_R2:
+        return fsspec.open(
+            f"s3://{R2_BUCKET}/Copy of cleaned_argo_common.parquet",
+            mode="rb",
+            **R2_STORAGE_OPTIONS,
+        )
+    else:
+        return open(
+            "Data/Copy of cleaned_argo_common.parquet",
+            "rb",
+        )
+
+
+def iter_argo_batches(columns, batch_size=10000):
+    """
+    Read the Argo Parquet file in small batches so the entire
+    dataset never has to be loaded into Render's memory.
+    """
+    with get_argo_parquet() as file_obj:
+        parquet_file = pq.ParquetFile(file_obj)
+
+        for batch in parquet_file.iter_batches(
+            batch_size=batch_size,
+            columns=columns,
+        ):
+            yield batch.to_pandas()
+
+
 def wind_category(wind):
     if pd.isna(wind):
         return "unknown"
@@ -222,61 +253,124 @@ def slice_range(variable: str, depth_idx: int = 0, time_idx: int = 0):
 
 
 # ============================================================
-# ARGO OBSERVATION LOCATIONS — LAZY LOAD
+# ARGO OBSERVATION LOCATIONS — MEMORY SAFE
 # ============================================================
 
 @app.get("/argo")
 def argo_floats():
-    argo_df = load_argo_data()
+    columns = ["latitude", "longitude", "time"]
 
-    argo_sample = (
-        argo_df[["latitude", "longitude", "time"]]
-        .dropna()
-        .drop_duplicates(subset=["latitude", "longitude", "time"])
-        .head(500)
-    )
+    records = []
+    seen = set()
+    row_number = 0
 
-    return [
-        {
-            "id": str(idx),
-            "lat": float(row["latitude"]),
-            "lon": float(row["longitude"]),
-            "time": float(row["time"]),
-        }
-        for idx, row in argo_sample.iterrows()
-    ]
+    for batch in iter_argo_batches(columns, batch_size=10000):
+        batch = batch.dropna(subset=columns)
+
+        for row in batch.itertuples(index=False):
+            key = (
+                float(row.latitude),
+                float(row.longitude),
+                float(row.time),
+            )
+
+            if key in seen:
+                row_number += 1
+                continue
+
+            seen.add(key)
+
+            records.append({
+                "id": str(row_number),
+                "lat": float(row.latitude),
+                "lon": float(row.longitude),
+                "time": float(row.time),
+            })
+
+            row_number += 1
+
+            if len(records) >= 500:
+                return records
+
+        row_number += len(batch)
+
+    return records
 
 
 @app.get("/argo/{observation_id}/profile")
 def argo_profile(observation_id: str):
-    argo_df = load_argo_data()
-
     try:
-        index = int(observation_id)
+        target_row = int(observation_id)
     except ValueError:
         return {"depth": [], "thetao": [], "so": []}
 
-    if index not in argo_df.index:
+    columns = [
+        "latitude",
+        "longitude",
+        "time",
+        "depth",
+        "thetao",
+        "so",
+    ]
+
+    selected = None
+    current_row = 0
+
+    # --------------------------------------------------------
+    # PASS 1: Find the selected observation
+    # --------------------------------------------------------
+
+    for batch in iter_argo_batches(columns, batch_size=10000):
+        batch_length = len(batch)
+
+        if target_row >= current_row and target_row < current_row + batch_length:
+            selected = batch.iloc[target_row - current_row]
+            break
+
+        current_row += batch_length
+
+    if selected is None:
         return {"depth": [], "thetao": [], "so": []}
 
-    selected = argo_df.loc[index]
     latitude = selected["latitude"]
     longitude = selected["longitude"]
     time_value = selected["time"]
 
-    sub = argo_df[
-        (argo_df["latitude"] == latitude)
-        & (argo_df["longitude"] == longitude)
-        & (argo_df["time"] == time_value)
-    ].copy()
+    # --------------------------------------------------------
+    # PASS 2: Find the complete profile
+    # --------------------------------------------------------
 
-    sub = sub[pd.notna(sub["depth"]) & pd.notna(sub["thetao"])]
+    profile_parts = []
+
+    for batch in iter_argo_batches(columns, batch_size=10000):
+        sub = batch[
+            (batch["latitude"] == latitude)
+            & (batch["longitude"] == longitude)
+            & (batch["time"] == time_value)
+        ]
+
+        if not sub.empty:
+            profile_parts.append(sub)
+
+    if not profile_parts:
+        return {"depth": [], "thetao": [], "so": []}
+
+    sub = pd.concat(profile_parts, ignore_index=True)
+
+    sub = sub[
+        pd.notna(sub["depth"])
+        & pd.notna(sub["thetao"])
+    ]
+
     sub = sub.sort_values("depth")
 
     return {
         "depth": sub["depth"].astype(float).tolist(),
         "thetao": sub["thetao"].astype(float).tolist(),
-        "so": [float(v) if pd.notna(v) else None for v in sub["so"]],
+        "so": [
+            float(v) if pd.notna(v) else None
+            for v in sub["so"]
+        ],
     }
 
 
