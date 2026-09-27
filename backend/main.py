@@ -50,6 +50,7 @@ if USE_R2:
     ds = xr.open_zarr(
         f"s3://{R2_BUCKET}/copernicuz_final.zarr",
         storage_options=R2_STORAGE_OPTIONS,
+        consolidated=False,
     )
 else:
     ds = xr.open_zarr("Data/copernicuz_final.zarr")
