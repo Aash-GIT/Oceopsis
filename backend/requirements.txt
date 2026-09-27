@@ -7,3 +7,4 @@ pandas
 numpy
 matplotlib
 pyarrow
+s3fs

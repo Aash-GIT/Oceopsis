@@ -9,6 +9,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import io
+import os
 from functools import lru_cache
 
 app = FastAPI()
@@ -21,10 +22,37 @@ app.add_middleware(
 )
 
 # ============================================================
+# R2 STORAGE CONFIGURATION
+# ============================================================
+
+R2_ENDPOINT = os.getenv("R2_ENDPOINT")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
+R2_BUCKET = os.getenv("R2_BUCKET", "oceopsis-data")
+
+USE_R2 = all([
+    R2_ENDPOINT,
+    R2_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY,
+])
+
+R2_STORAGE_OPTIONS = {
+    "key": R2_ACCESS_KEY_ID,
+    "secret": R2_SECRET_ACCESS_KEY,
+    "endpoint_url": R2_ENDPOINT,
+}
+
+# ============================================================
 # COPERNICUS OCEAN DATA
 # ============================================================
 
-ds = xr.open_zarr("Data/copernicuz_final.zarr")
+if USE_R2:
+    ds = xr.open_zarr(
+        f"s3://{R2_BUCKET}/copernicuz_final.zarr",
+        storage_options=R2_STORAGE_OPTIONS,
+    )
+else:
+    ds = xr.open_zarr("Data/copernicuz_final.zarr")
 
 VALUE_RANGES = {
     "thetao": (15, 32),
@@ -39,7 +67,13 @@ VALUE_RANGES = {
 # ARGO DATA
 # ============================================================
 
-argo_df = pd.read_parquet("Data/Copy of cleaned_argo_common.parquet")
+if USE_R2:
+    argo_df = pd.read_parquet(
+        f"s3://{R2_BUCKET}/Copy of cleaned_argo_common.parquet",
+        storage_options=R2_STORAGE_OPTIONS,
+    )
+else:
+    argo_df = pd.read_parquet("Data/Copy of cleaned_argo_common.parquet")
 
 # Precompute ONCE at startup, not per-request
 argo_sample = (
@@ -53,7 +87,13 @@ argo_sample = (
 # GLIDER DATA
 # ============================================================
 
-glider_df = pd.read_parquet("Data/glider_data.parquet")
+if USE_R2:
+    glider_df = pd.read_parquet(
+        f"s3://{R2_BUCKET}/glider_data.parquet",
+        storage_options=R2_STORAGE_OPTIONS,
+    )
+else:
+    glider_df = pd.read_parquet("Data/glider_data.parquet")
 
 glider_df["PLATFORM_NUMBER"] = glider_df["PLATFORM_NUMBER"].apply(
     lambda x: x.decode().strip() if isinstance(x, bytes) else str(x).strip()
@@ -65,7 +105,14 @@ glider_df = glider_df.sort_values(["PLATFORM_NUMBER", "TIME"])
 # CYCLONE DATA
 # ============================================================
 
-cyclone_df = pd.read_parquet("Data/cyclone_data_2010_2025_final.parquet")
+if USE_R2:
+    cyclone_df = pd.read_parquet(
+        f"s3://{R2_BUCKET}/cyclone_data_2010_2025_final.parquet",
+        storage_options=R2_STORAGE_OPTIONS,
+    )
+else:
+    cyclone_df = pd.read_parquet("Data/cyclone_data_2010_2025_final.parquet")
+
 cyclone_df["wind"] = cyclone_df["WMO_WIND"].fillna(cyclone_df["NEWDELHI_WIND"])
 
 
@@ -309,6 +356,8 @@ def cyclone_explain(sid: str):
             f"({wind_category(peak['wind'])}) near {peak['LAT']:.1f}°N, {peak['LON']:.1f}°E."
         )
     }
+
+
 @app.get("/slice/explain")
 def slice_explain(variable: str, depth_idx: int = 0, time_idx: int = 0):
     if variable not in ds.data_vars:
