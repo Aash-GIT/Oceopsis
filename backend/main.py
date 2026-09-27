@@ -65,56 +65,73 @@ VALUE_RANGES = {
 }
 
 # ============================================================
-# ARGO DATA
+# DATA LOADERS
 # ============================================================
 
-if USE_R2:
-    argo_df = pd.read_parquet(
-        f"s3://{R2_BUCKET}/Copy of cleaned_argo_common.parquet",
-        storage_options=R2_STORAGE_OPTIONS,
+argo_df = None
+glider_df = None
+cyclone_df = None
+
+
+def load_argo_data():
+    global argo_df
+
+    if argo_df is not None:
+        return argo_df
+
+    if USE_R2:
+        argo_df = pd.read_parquet(
+            f"s3://{R2_BUCKET}/Copy of cleaned_argo_common.parquet",
+            storage_options=R2_STORAGE_OPTIONS,
+        )
+    else:
+        argo_df = pd.read_parquet("Data/Copy of cleaned_argo_common.parquet")
+
+    return argo_df
+
+
+def load_glider_data():
+    global glider_df
+
+    if glider_df is not None:
+        return glider_df
+
+    if USE_R2:
+        glider_df = pd.read_parquet(
+            f"s3://{R2_BUCKET}/glider_data.parquet",
+            storage_options=R2_STORAGE_OPTIONS,
+        )
+    else:
+        glider_df = pd.read_parquet("Data/glider_data.parquet")
+
+    glider_df["PLATFORM_NUMBER"] = glider_df["PLATFORM_NUMBER"].apply(
+        lambda x: x.decode().strip() if isinstance(x, bytes) else str(x).strip()
     )
-else:
-    argo_df = pd.read_parquet("Data/Copy of cleaned_argo_common.parquet")
 
-# Precompute ONCE at startup, not per-request
-argo_sample = (
-    argo_df[["latitude", "longitude", "time"]]
-    .dropna()
-    .drop_duplicates(subset=["latitude", "longitude", "time"])
-    .head(500)
-)
+    glider_df = glider_df.sort_values(["PLATFORM_NUMBER", "TIME"])
 
-# ============================================================
-# GLIDER DATA
-# ============================================================
+    return glider_df
 
-if USE_R2:
-    glider_df = pd.read_parquet(
-        f"s3://{R2_BUCKET}/glider_data.parquet",
-        storage_options=R2_STORAGE_OPTIONS,
+
+def load_cyclone_data():
+    global cyclone_df
+
+    if cyclone_df is not None:
+        return cyclone_df
+
+    if USE_R2:
+        cyclone_df = pd.read_parquet(
+            f"s3://{R2_BUCKET}/cyclone_data_2010_2025_final.parquet",
+            storage_options=R2_STORAGE_OPTIONS,
+        )
+    else:
+        cyclone_df = pd.read_parquet("Data/cyclone_data_2010_2025_final.parquet")
+
+    cyclone_df["wind"] = cyclone_df["WMO_WIND"].fillna(
+        cyclone_df["NEWDELHI_WIND"]
     )
-else:
-    glider_df = pd.read_parquet("Data/glider_data.parquet")
 
-glider_df["PLATFORM_NUMBER"] = glider_df["PLATFORM_NUMBER"].apply(
-    lambda x: x.decode().strip() if isinstance(x, bytes) else str(x).strip()
-)
-
-glider_df = glider_df.sort_values(["PLATFORM_NUMBER", "TIME"])
-
-# ============================================================
-# CYCLONE DATA
-# ============================================================
-
-if USE_R2:
-    cyclone_df = pd.read_parquet(
-        f"s3://{R2_BUCKET}/cyclone_data_2010_2025_final.parquet",
-        storage_options=R2_STORAGE_OPTIONS,
-    )
-else:
-    cyclone_df = pd.read_parquet("Data/cyclone_data_2010_2025_final.parquet")
-
-cyclone_df["wind"] = cyclone_df["WMO_WIND"].fillna(cyclone_df["NEWDELHI_WIND"])
+    return cyclone_df
 
 
 def wind_category(wind):
@@ -205,11 +222,20 @@ def slice_range(variable: str, depth_idx: int = 0, time_idx: int = 0):
 
 
 # ============================================================
-# ARGO OBSERVATION LOCATIONS — NOW USES PRECOMPUTED SAMPLE
+# ARGO OBSERVATION LOCATIONS — LAZY LOAD
 # ============================================================
 
 @app.get("/argo")
 def argo_floats():
+    argo_df = load_argo_data()
+
+    argo_sample = (
+        argo_df[["latitude", "longitude", "time"]]
+        .dropna()
+        .drop_duplicates(subset=["latitude", "longitude", "time"])
+        .head(500)
+    )
+
     return [
         {
             "id": str(idx),
@@ -223,6 +249,8 @@ def argo_floats():
 
 @app.get("/argo/{observation_id}/profile")
 def argo_profile(observation_id: str):
+    argo_df = load_argo_data()
+
     try:
         index = int(observation_id)
     except ValueError:
@@ -253,14 +281,18 @@ def argo_profile(observation_id: str):
 
 
 # ============================================================
-# GLIDER TRACK LOCATIONS
+# GLIDER TRACK LOCATIONS — LAZY LOAD
 # ============================================================
 
 @app.get("/gliders")
 def glider_list():
+    glider_df = load_glider_data()
+
     out = []
+
     for pid, g in glider_df.groupby("PLATFORM_NUMBER"):
         g = g.dropna(subset=["LATITUDE", "LONGITUDE"])
+
         if g.empty:
             continue
 
@@ -271,7 +303,11 @@ def glider_list():
         if g.empty:
             continue
 
-        track = [{"lat": float(r.LATITUDE), "lon": float(r.LONGITUDE)} for r in g.itertuples()]
+        track = [
+            {"lat": float(r.LATITUDE), "lon": float(r.LONGITUDE)}
+            for r in g.itertuples()
+        ]
+
         last = g.iloc[-1]
 
         out.append({
@@ -280,15 +316,26 @@ def glider_list():
             "last_lat": float(last["LATITUDE"]),
             "last_lon": float(last["LONGITUDE"]),
         })
+
     return out
 
 
 @app.get("/gliders/{platform_id}/profile")
 def glider_profile(platform_id: str):
-    sub = glider_df[glider_df["PLATFORM_NUMBER"] == platform_id].copy()
+    glider_df = load_glider_data()
+
+    sub = glider_df[
+        glider_df["PLATFORM_NUMBER"] == platform_id
+    ].copy()
 
     if sub.empty:
-        return {"depth": [], "temp": [], "psal": [], "doxy": [], "chla": []}
+        return {
+            "depth": [],
+            "temp": [],
+            "psal": [],
+            "doxy": [],
+            "chla": [],
+        }
 
     sub = sub[pd.notna(sub["DEPTH"]) & pd.notna(sub["TEMP"])]
     sub = sub.sort_values("DEPTH")
@@ -303,21 +350,34 @@ def glider_profile(platform_id: str):
 
 
 # ============================================================
-# CYCLONES
+# CYCLONES — LAZY LOAD
 # ============================================================
 
 @app.get("/cyclones")
 def cyclone_list():
+    cyclone_df = load_cyclone_data()
+
     storms = cyclone_df.groupby("SID").first().reset_index()
+
     return [
-        {"sid": str(row.SID), "name": str(row.NAME), "year": int(row.YEAR), "subbasin": str(row.SUBBASIN)}
+        {
+            "sid": str(row.SID),
+            "name": str(row.NAME),
+            "year": int(row.YEAR),
+            "subbasin": str(row.SUBBASIN),
+        }
         for row in storms.itertuples()
     ]
 
 
 @app.get("/cyclones/{sid}/track")
 def cyclone_track(sid: str):
-    sub = cyclone_df[cyclone_df["SID"].astype(str) == str(sid)].sort_values("ISO_TIME")
+    cyclone_df = load_cyclone_data()
+
+    sub = cyclone_df[
+        cyclone_df["SID"].astype(str) == str(sid)
+    ].sort_values("ISO_TIME")
+
     if sub.empty:
         return {"name": "", "points": []}
 
@@ -338,7 +398,12 @@ def cyclone_track(sid: str):
 
 @app.get("/cyclones/{sid}/explain")
 def cyclone_explain(sid: str):
-    sub = cyclone_df[cyclone_df["SID"].astype(str) == str(sid)].sort_values("ISO_TIME")
+    cyclone_df = load_cyclone_data()
+
+    sub = cyclone_df[
+        cyclone_df["SID"].astype(str) == str(sid)
+    ].sort_values("ISO_TIME")
+
     if sub.empty:
         return {"text": "Cyclone data not found."}
 
@@ -347,14 +412,22 @@ def cyclone_explain(sid: str):
     subbasin = str(sub.iloc[0]["SUBBASIN"])
 
     wind_data = sub[sub["wind"].notna()]
+
     if wind_data.empty:
-        return {"text": f"{name} ({year}, {subbasin}) has no recorded wind intensity in the available dataset."}
+        return {
+            "text": (
+                f"{name} ({year}, {subbasin}) has no recorded wind "
+                "intensity in the available dataset."
+            )
+        }
 
     peak = wind_data.loc[wind_data["wind"].idxmax()]
+
     return {
         "text": (
             f"{name} ({year}, {subbasin}) peaked at {peak['wind']:.0f} kt "
-            f"({wind_category(peak['wind'])}) near {peak['LAT']:.1f}°N, {peak['LON']:.1f}°E."
+            f"({wind_category(peak['wind'])}) near "
+            f"{peak['LAT']:.1f}°N, {peak['LON']:.1f}°E."
         )
     }
 
