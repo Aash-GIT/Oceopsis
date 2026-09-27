@@ -1,7 +1,10 @@
 import * as Cesium from 'cesium'
 
+const API_URL =
+  import.meta.env.VITE_API_URL
+
 export async function loadArgoPoints(viewer, entitiesRef, onSelect) {
-  const res = await fetch('http://localhost:8000/argo')
+  const res = await fetch(`${API_URL}/argo`)
   const floats = await res.json()
 
   floats.forEach(f => {

@@ -1,3 +1,4 @@
+
 import {
   useState,
   useRef,
@@ -22,6 +23,10 @@ import {
 } from './RegionLookup'
 
 import './landing.css'
+
+
+const API_URL =
+  import.meta.env.VITE_API_URL
 
 
 // ============================================================
@@ -157,7 +162,7 @@ export default function App() {
   useEffect(() => {
 
     fetch(
-      'http://localhost:8000/times'
+      `${API_URL}/times`
     )
 
       .then((response) => {
@@ -200,7 +205,7 @@ export default function App() {
   useEffect(() => {
 
     fetch(
-      'http://localhost:8000/cyclones'
+      `${API_URL}/cyclones`
     )
 
       .then((response) => {
@@ -281,7 +286,7 @@ export default function App() {
     // ----------------------------------------------------------
 
     const url =
-      'http://localhost:8000/slice' +
+      `${API_URL}/slice` +
       `?variable=${encodeURIComponent(v)}` +
       `&depth_idx=${d}` +
       `&time_idx=${t}`
@@ -329,7 +334,7 @@ export default function App() {
     // ----------------------------------------------------------
 
     fetch(
-      `http://localhost:8000/slice/explain?variable=${encodeURIComponent(v)}&depth_idx=${d}&time_idx=${t}`
+      `${API_URL}/slice/explain?variable=${encodeURIComponent(v)}&depth_idx=${d}&time_idx=${t}`
     )
 
       .then((response) => {
@@ -498,7 +503,7 @@ export default function App() {
 
           const response =
             await fetch(
-              `http://localhost:8000/argo/${floatId}/profile`
+              `${API_URL}/argo/${floatId}/profile`
             )
 
 
@@ -579,7 +584,7 @@ export default function App() {
 
           const response =
             await fetch(
-              `http://localhost:8000/gliders/${gliderId}/profile`
+              `${API_URL}/gliders/${gliderId}/profile`
             )
 
 
@@ -663,7 +668,7 @@ export default function App() {
 
       const response =
         await fetch(
-          `http://localhost:8000/cyclones/${sid}/explain`
+          `${API_URL}/cyclones/${sid}/explain`
         )
 
 
@@ -1289,6 +1294,7 @@ export default function App() {
           OCEOPSIS
         </h1>
         <p className="splash-subtitle">Welcome to Ocean Visualization</p>
+
         <div
           className="spinner"
         />

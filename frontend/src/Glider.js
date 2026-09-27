@@ -1,8 +1,11 @@
 import * as Cesium from 'cesium'
 
+const API_URL =
+  import.meta.env.VITE_API_URL
+
 export async function loadGliderTracks(viewer, entitiesRef, onSelect) {
   console.log('🚨 GLIDER FUNCTION CALLED')
-  const res = await fetch('http://localhost:8000/gliders')
+  const res = await fetch(`${API_URL}/gliders`)
   const gliders = await res.json()
 
   gliders.forEach(g => {

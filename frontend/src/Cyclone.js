@@ -1,5 +1,8 @@
 import * as Cesium from 'cesium'
 
+const API_URL =
+  import.meta.env.VITE_API_URL
+
 const CATEGORY_COLORS = {
   depression: Cesium.Color.YELLOW,
   storm: Cesium.Color.ORANGE,
@@ -9,7 +12,7 @@ const CATEGORY_COLORS = {
 }
 
 export async function loadCycloneTrack(viewer, entitiesRef, sid) {
-  const res = await fetch(`http://localhost:8000/cyclones/${sid}/track`)
+  const res = await fetch(`${API_URL}/cyclones/${sid}/track`)
   const { points } = await res.json()
   if (!points.length) return
 
