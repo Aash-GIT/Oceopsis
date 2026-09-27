@@ -1,0 +1,21 @@
+# data
+backend/Data/
+*.zarr
+*.parquet
+
+# env
+.env
+**/.env
+
+# node
+node_modules/
+dist/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# os
+.DS_Store

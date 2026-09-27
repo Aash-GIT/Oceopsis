@@ -1,0 +1,580 @@
+/* =========================================================
+   GLOBAL
+   ========================================================= */
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+}
+
+
+/* =========================================================
+   SPLASH SCREEN
+   ========================================================= */
+
+.splash {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  color: #e8eaed;
+
+  pointer-events: none;
+
+  transition: opacity 1.6s ease;
+}
+
+.splash.hide {
+  opacity: 0;
+}
+
+.splash h1 {
+  margin: 0 0 1.6rem;
+
+  font:
+    500 3.2rem
+    'Google Sans',
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+
+  letter-spacing: -0.02em;
+
+  text-shadow:
+    0 2px 40px
+    rgba(0, 0, 0, 0.7);
+}
+
+
+/* =========================================================
+   SPLASH SPINNER
+   ========================================================= */
+
+.spinner {
+  width: 40px;
+  height: 40px;
+
+  border: 4px solid transparent;
+
+  border-top-color: #4285f4;
+
+  border-radius: 50%;
+
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+/* =========================================================
+   OCEAN CONTROL PANEL
+   ========================================================= */
+
+.panel {
+  position: absolute;
+
+  top: 20px;
+  right: 20px;
+
+  z-index: 20;
+
+  width: 260px;
+
+  padding: 16px 18px;
+
+  background:
+    rgba(20, 24, 30, 0.55);
+
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.12);
+
+  border-radius: 14px;
+
+  color: #e8eaed;
+
+  font:
+    13px/1.4
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 14px;
+
+  box-shadow:
+    0 8px 32px
+    rgba(0, 0, 0, 0.35);
+}
+
+
+/* =========================================================
+   PANEL LABELS
+   ========================================================= */
+
+
+ .panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #e8eaed;
+  font-size: 13px;
+}
+
+
+
+/* =========================================================
+   VARIABLE SELECT
+   ========================================================= */
+
+.panel select {
+  width: 100%;
+  box-sizing: border-box;
+  background:
+    rgba(0, 0, 0, 0.3);
+  color: #e8eaed;
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.15);
+
+  border-radius: 6px;
+
+  padding: 7px 8px;
+
+  outline: none;
+
+  cursor: pointer;
+}
+.panel select option {
+  font-size: 15px;
+  padding: 6px;
+  background: #1a1e24;
+  color: #e8eaed;
+}
+
+.panel select:focus {
+  border-color:
+    rgba(255, 255, 255, 0.35);
+}
+
+
+/* =========================================================
+   RANGE SLIDERS
+   ========================================================= */
+
+.panel input[type='range'] {
+  width: 100%;
+
+  cursor: pointer;
+
+  accent-color: #4285f4;
+}
+
+
+/* =========================================================
+   COLORBAR
+   ========================================================= */
+
+.colorbar {
+  margin-top: 2px;
+}
+
+.colorbar-gradient {
+  height: 12px;
+
+  border-radius: 4px;
+
+  background:
+    linear-gradient(
+      to right,
+      #30123b,
+      #4662d7,
+      #35abf8,
+      #1ae4b6,
+      #72fe5e,
+      #c8ef34,
+      #faba39,
+      #f66b19,
+      #ca2a04,
+      #7a0403
+    );
+}
+
+.colorbar-labels {
+  display: flex;
+
+  justify-content: space-between;
+
+  margin-top: 4px;
+
+  font-size: 11px;
+
+  opacity: 0.8;
+}
+
+
+/* =========================================================
+   MODE PANEL
+   ========================================================= */
+
+.mode-panel {
+  position: absolute;
+
+  top: 20px;
+  left: 20px;
+
+  z-index: 20;
+
+  display: flex;
+
+  gap: 6px;
+
+  padding: 6px;
+
+  background:
+    rgba(20, 24, 30, 0.55);
+
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.12);
+
+  border-radius: 12px;
+
+  box-shadow:
+    0 8px 32px
+    rgba(0, 0, 0, 0.35);
+}
+
+
+/* =========================================================
+   MODE BUTTON
+   ========================================================= */
+
+.mode-button {
+  border: none;
+
+  outline: none;
+
+  padding: 8px 13px;
+
+  border-radius: 8px;
+
+  background: transparent;
+
+  color:
+    rgba(255, 255, 255, 0.75);
+
+  font:
+    13px
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+
+  cursor: pointer;
+
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.mode-button:hover {
+  background:
+    rgba(255, 255, 255, 0.1);
+
+  color: white;
+}
+
+.mode-button.active {
+  background:
+    rgba(66, 133, 244, 0.85);
+
+  color: white;
+}
+
+
+/* =========================================================
+   ARGO PROFILE PANEL
+   ========================================================= */
+
+.profile-panel {
+  position: absolute;
+   left: 20px;
+  bottom: 20px;
+
+  z-index: 30;
+
+  width: 320px;
+
+  padding: 18px;
+
+  background:
+    rgba(20, 24, 30, 0.72);
+
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.14);
+
+  border-radius: 14px;
+
+  color: #e8eaed;
+
+  font:
+    13px/1.4
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+
+  box-shadow:
+    0 10px 40px
+    rgba(0, 0, 0, 0.45);
+}
+
+
+/* =========================================================
+   ARGO PROFILE TITLE
+   ========================================================= */
+
+.profile-panel h3 {
+  margin:
+    0 0 4px;
+
+  font-size: 16px;
+
+  font-weight: 500;
+}
+
+
+/* =========================================================
+   ARGO PROFILE SUBTITLE
+   ========================================================= */
+
+.profile-subtitle {
+  margin:
+    0 0 12px;
+
+  color:
+    rgba(255, 255, 255, 0.65);
+
+  font-size: 12px;
+}
+
+
+/* =========================================================
+   PROFILE CLOSE BUTTON
+   ========================================================= */
+
+.close-btn {
+  position: absolute;
+
+  top: 10px;
+  right: 10px;
+
+  width: 28px;
+  height: 28px;
+
+  border: none;
+
+  border-radius: 50%;
+
+  background:
+    rgba(255, 255, 255, 0.08);
+
+  color: white;
+
+  cursor: pointer;
+
+  font-size: 15px;
+
+  transition:
+    background 0.2s ease;
+}
+
+.close-btn:hover {
+  background:
+    rgba(255, 255, 255, 0.18);
+}
+
+
+/* =========================================================
+   PROFILE CHART
+   ========================================================= */
+
+.profile-panel svg {
+  overflow: visible;
+}
+/* =========================================================
+   ARGO INFO TABLE
+   ========================================================= */
+
+.argo-info-panel {
+  position: absolute;
+
+  bottom: 20px;
+  right: 20px;
+
+  z-index: 30;
+
+  width: 260px;
+  max-height: 260px;
+
+  padding: 14px;
+
+  overflow: hidden;
+
+  background: rgba(20, 24, 30, 0.72);
+
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.12);
+
+  border-radius: 14px;
+
+  color: #e8eaed;
+
+  font:
+    12px/1.3
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+
+  box-shadow:
+    0 10px 40px
+    rgba(0, 0, 0, 0.45);
+}
+
+.argo-info-panel h3 {
+  margin: 0 0 10px;
+
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.argo-table-wrap {
+  max-height: 210px;
+
+  overflow-y: auto;
+}
+
+.argo-table-wrap table {
+  width: 100%;
+
+  border-collapse: collapse;
+}
+
+.argo-table-wrap th,
+.argo-table-wrap td {
+  padding: 5px 6px;
+
+  text-align: right;
+
+  border-bottom:
+    1px solid
+    rgba(255, 255, 255, 0.08);
+}
+
+.argo-table-wrap th {
+  position: sticky;
+  top: 0;
+
+  background: rgba(20, 24, 30, 0.95);
+
+  font-weight: 500;
+}
+
+.argo-table-wrap td {
+  color: rgba(255, 255, 255, 0.8);
+}
+/* =========================================================
+   COORDINATE READOUT
+   ========================================================= */
+
+.coord-readout {
+  position: absolute;
+
+  bottom: 16px;
+  left: 50%;
+
+  transform: translateX(-50%);
+
+  z-index: 20;
+
+  background:
+    rgba(20, 24, 30, 0.65);
+
+  backdrop-filter: blur(10px);
+
+  padding: 5px 12px;
+
+  border-radius: 8px;
+
+  color: #e8eaed;
+
+  font:
+    12px
+    monospace;
+
+  pointer-events: none;
+}
+.explain-caption {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 10px;
+}
+.ocean-explain-panel {
+  top: auto;
+  bottom: 20px;
+  right: 20px;
+  width: 260px;
+}
+
+.explain-caption {
+  margin: 0;
+  line-height: 1.4;
+}
+.splash-subtitle {
+  margin: 0 0 1.8rem;
+  font: 300 1.1rem 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  color: rgba(232, 234, 237, 0.75);
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.6);
+
+  opacity: 0;
+  animation: subtitleFadeIn 1.8s ease forwards;
+  animation-delay: 0.6s;
+}
+
+@keyframes subtitleFadeIn {
+  to {
+    opacity: 1;
+  }
+}
