@@ -90,7 +90,9 @@ def load_argo_data():
             storage_options=R2_STORAGE_OPTIONS,
         )
     else:
-        argo_df = pd.read_parquet("Data/Copy of cleaned_argo_common.parquet")
+        argo_df = pd.read_parquet(
+            "Data/Copy of cleaned_argo_common.parquet"
+        )
 
     return argo_df
 
@@ -130,7 +132,9 @@ def load_cyclone_data():
             storage_options=R2_STORAGE_OPTIONS,
         )
     else:
-        cyclone_df = pd.read_parquet("Data/cyclone_data_2010_2025_final.parquet")
+        cyclone_df = pd.read_parquet(
+            "Data/cyclone_data_2010_2025_final.parquet"
+        )
 
     cyclone_df["wind"] = cyclone_df["WMO_WIND"].fillna(
         cyclone_df["NEWDELHI_WIND"]
@@ -221,38 +225,76 @@ def _make_slice_png(variable: str, depth_idx: int, time_idx: int) -> bytes:
         vmax = float(np.nanmax(data))
 
     fig, ax = plt.subplots(
-        figsize=(data.shape[1] / 100, data.shape[0] / 100), dpi=100
+        figsize=(data.shape[1] / 100, data.shape[0] / 100),
+        dpi=100,
     )
     ax.axis("off")
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    ax.imshow(np.flipud(data), cmap="turbo", vmin=vmin, vmax=vmax)
+
+    ax.imshow(
+        np.flipud(data),
+        cmap="turbo",
+        vmin=vmin,
+        vmax=vmax,
+    )
 
     buf = io.BytesIO()
-    plt.savefig(buf, format="png", transparent=True)
+    plt.savefig(
+        buf,
+        format="png",
+        transparent=True,
+    )
     plt.close(fig)
+
     buf.seek(0)
     return buf.getvalue()
 
 
 @app.get("/slice")
-def slice_data(variable: str, depth_idx: int = 0, time_idx: int = 0):
-    png_bytes = _make_slice_png(variable, depth_idx, time_idx)
+def slice_data(
+    variable: str,
+    depth_idx: int = 0,
+    time_idx: int = 0,
+):
+    png_bytes = _make_slice_png(
+        variable,
+        depth_idx,
+        time_idx,
+    )
+
     return Response(
         content=png_bytes,
         media_type="image/png",
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={
+            "Cache-Control": "public, max-age=3600"
+        },
     )
 
 
 @app.get("/slice_range")
-def slice_range(variable: str, depth_idx: int = 0, time_idx: int = 0):
+def slice_range(
+    variable: str,
+    depth_idx: int = 0,
+    time_idx: int = 0,
+):
     if variable in VALUE_RANGES:
         vmin, vmax = VALUE_RANGES[variable]
-        return {"min": vmin, "max": vmax}
+        return {
+            "min": vmin,
+            "max": vmax,
+        }
 
-    da = ds[variable].isel(depth=depth_idx, time=time_idx)
+    da = ds[variable].isel(
+        depth=depth_idx,
+        time=time_idx,
+    )
+
     data = da.values
-    return {"min": float(np.nanmin(data)), "max": float(np.nanmax(data))}
+
+    return {
+        "min": float(np.nanmin(data)),
+        "max": float(np.nanmax(data)),
+    }
 
 
 # ============================================================
@@ -261,13 +303,20 @@ def slice_range(variable: str, depth_idx: int = 0, time_idx: int = 0):
 
 @app.get("/argo")
 def argo_floats():
-    columns = ["latitude", "longitude", "time"]
+    columns = [
+        "latitude",
+        "longitude",
+        "time",
+    ]
 
     records = []
     seen = set()
     row_number = 0
 
-    for batch in iter_argo_batches(columns, batch_size=10000):
+    for batch in iter_argo_batches(
+        columns,
+        batch_size=10000,
+    ):
         batch = batch.dropna(subset=columns)
 
         for row in batch.itertuples(index=False):
@@ -295,70 +344,151 @@ def argo_floats():
             if len(records) >= 500:
                 return records
 
-        row_number += len(batch)
-
     return records
 
 
-@app.get("/argo/{observation_id}/profile")
-def argo_profile(observation_id: str):
-    try:
-        target_row = int(observation_id)
-    except ValueError:
-        return {"depth": [], "thetao": [], "so": []}
+# ============================================================
+# ARGO PROFILE — ROW-GROUP BASED
+# ============================================================
 
-    columns = [
-        "latitude",
-        "longitude",
-        "time",
-        "depth",
-        "thetao",
-        "so",
-    ]
+ARGO_LIGHT_COLUMNS = [
+    "latitude",
+    "longitude",
+    "time",
+]
+
+ARGO_FULL_COLUMNS = [
+    "latitude",
+    "longitude",
+    "time",
+    "depth",
+    "thetao",
+    "so",
+]
+
+
+@lru_cache(maxsize=1)
+def _argo_row_group_offsets():
+    """
+    Read only Parquet metadata and calculate the cumulative
+    row ranges for each row group.
+
+    No actual Argo data is loaded here.
+    """
+    with get_argo_parquet() as file_obj:
+        parquet_file = pq.ParquetFile(file_obj)
+
+        offsets = []
+        cumulative = 0
+
+        for group_idx in range(parquet_file.num_row_groups):
+            num_rows = parquet_file.metadata.row_group(
+                group_idx
+            ).num_rows
+
+            offsets.append((
+                cumulative,
+                cumulative + num_rows,
+                group_idx,
+            ))
+
+            cumulative += num_rows
+
+        return tuple(offsets)
+
+
+def _argo_profile(target_row: int):
+    """
+    Find an Argo observation and construct its complete
+    depth profile without scanning the dataset row-by-row.
+    """
+
+    offsets = _argo_row_group_offsets()
+
+    # --------------------------------------------------------
+    # PASS 1
+    # Use Parquet metadata to jump directly to the row group
+    # containing target_row.
+    # --------------------------------------------------------
 
     selected = None
-    current_row = 0
 
-    # --------------------------------------------------------
-    # PASS 1: Find the selected observation
-    # --------------------------------------------------------
+    with get_argo_parquet() as file_obj:
+        parquet_file = pq.ParquetFile(file_obj)
 
-    for batch in iter_argo_batches(columns, batch_size=10000):
-        batch_length = len(batch)
+        for start, end, group_idx in offsets:
+            if start <= target_row < end:
 
-        if target_row >= current_row and target_row < current_row + batch_length:
-            selected = batch.iloc[target_row - current_row]
-            break
+                group_df = parquet_file.read_row_group(
+                    group_idx,
+                    columns=ARGO_LIGHT_COLUMNS,
+                    use_threads=False,
+                ).to_pandas()
 
-        current_row += batch_length
+                local_idx = target_row - start
 
-    if selected is None:
-        return {"depth": [], "thetao": [], "so": []}
+                if local_idx >= len(group_df):
+                    return None
 
-    latitude = selected["latitude"]
-    longitude = selected["longitude"]
-    time_value = selected["time"]
+                selected = group_df.iloc[local_idx]
 
-    # --------------------------------------------------------
-    # PASS 2: Find the complete profile
-    # --------------------------------------------------------
+                del group_df
 
-    profile_parts = []
+                break
 
-    for batch in iter_argo_batches(columns, batch_size=10000):
-        sub = batch[
-            (batch["latitude"] == latitude)
-            & (batch["longitude"] == longitude)
-            & (batch["time"] == time_value)
-        ]
+        if selected is None:
+            return None
 
-        if not sub.empty:
-            profile_parts.append(sub)
+        latitude = selected["latitude"]
+        longitude = selected["longitude"]
+        time_value = selected["time"]
+
+        # ----------------------------------------------------
+        # PASS 2
+        # Scan row groups using only the lightweight columns.
+        # Only read depth/thetao/so from row groups containing
+        # a matching profile.
+        # ----------------------------------------------------
+
+        profile_parts = []
+
+        for start, end, group_idx in offsets:
+
+            light_df = parquet_file.read_row_group(
+                group_idx,
+                columns=ARGO_LIGHT_COLUMNS,
+                use_threads=False,
+            ).to_pandas()
+
+            mask = (
+                (light_df["latitude"] == latitude)
+                & (light_df["longitude"] == longitude)
+                & (light_df["time"] == time_value)
+            )
+
+            if mask.any():
+
+                full_df = parquet_file.read_row_group(
+                    group_idx,
+                    columns=ARGO_FULL_COLUMNS,
+                    use_threads=False,
+                ).to_pandas()
+
+                profile_parts.append(
+                    full_df.loc[mask.to_numpy()]
+                )
+
+                del full_df
+
+            del light_df
 
     if not profile_parts:
-        return {"depth": [], "thetao": [], "so": []}
+        return None
 
-    sub = pd.concat(profile_parts, ignore_index=True)
+    sub = pd.concat(
+        profile_parts,
+        ignore_index=True,
+    )
 
     sub = sub[
         pd.notna(sub["depth"])
@@ -367,7 +497,7 @@ def argo_profile(observation_id: str):
 
     sub = sub.sort_values("depth")
 
-    return {
+    result = {
         "depth": sub["depth"].astype(float).tolist(),
         "thetao": sub["thetao"].astype(float).tolist(),
         "so": [
@@ -375,6 +505,41 @@ def argo_profile(observation_id: str):
             for v in sub["so"]
         ],
     }
+
+    del sub
+    del profile_parts
+
+    return result
+
+
+@app.get("/argo/{observation_id}/profile")
+def argo_profile(observation_id: str):
+    try:
+        target_row = int(observation_id)
+    except ValueError:
+        return {
+            "depth": [],
+            "thetao": [],
+            "so": [],
+        }
+
+    if target_row < 0:
+        return {
+            "depth": [],
+            "thetao": [],
+            "so": [],
+        }
+
+    result = _argo_profile(target_row)
+
+    if result is None:
+        return {
+            "depth": [],
+            "thetao": [],
+            "so": [],
+        }
+
+    return result
 
 
 # ============================================================
@@ -388,20 +553,39 @@ def glider_list():
     out = []
 
     for pid, g in glider_df.groupby("PLATFORM_NUMBER"):
-        g = g.dropna(subset=["LATITUDE", "LONGITUDE"])
+        g = g.dropna(
+            subset=[
+                "LATITUDE",
+                "LONGITUDE",
+            ]
+        )
 
         if g.empty:
             continue
 
-        pts = g[["LATITUDE", "LONGITUDE"]].round(4)
-        g = g[(pts != pts.shift()).any(axis=1)]
-        g = g.iloc[:: max(1, len(g) // 200)]
+        pts = g[
+            [
+                "LATITUDE",
+                "LONGITUDE",
+            ]
+        ].round(4)
+
+        g = g[
+            (pts != pts.shift()).any(axis=1)
+        ]
+
+        g = g.iloc[
+            ::max(1, len(g) // 200)
+        ]
 
         if g.empty:
             continue
 
         track = [
-            {"lat": float(r.LATITUDE), "lon": float(r.LONGITUDE)}
+            {
+                "lat": float(r.LATITUDE),
+                "lon": float(r.LONGITUDE),
+            }
             for r in g.itertuples()
         ]
 
@@ -434,15 +618,28 @@ def glider_profile(platform_id: str):
             "chla": [],
         }
 
-    sub = sub[pd.notna(sub["DEPTH"]) & pd.notna(sub["TEMP"])]
+    sub = sub[
+        pd.notna(sub["DEPTH"])
+        & pd.notna(sub["TEMP"])
+    ]
+
     sub = sub.sort_values("DEPTH")
 
     return {
         "depth": sub["DEPTH"].astype(float).tolist(),
         "temp": sub["TEMP"].astype(float).tolist(),
-        "psal": [float(v) if pd.notna(v) else None for v in sub["PSAL"]],
-        "doxy": [float(v) if pd.notna(v) else 0.0 for v in sub["DOXY"]],
-        "chla": [float(v) if pd.notna(v) else 0.0 for v in sub["CHLA"]],
+        "psal": [
+            float(v) if pd.notna(v) else None
+            for v in sub["PSAL"]
+        ],
+        "doxy": [
+            float(v) if pd.notna(v) else 0.0
+            for v in sub["DOXY"]
+        ],
+        "chla": [
+            float(v) if pd.notna(v) else 0.0
+            for v in sub["CHLA"]
+        ],
     }
 
 
@@ -454,7 +651,9 @@ def glider_profile(platform_id: str):
 def cyclone_list():
     cyclone_df = load_cyclone_data()
 
-    storms = cyclone_df.groupby("SID").first().reset_index()
+    storms = cyclone_df.groupby(
+        "SID"
+    ).first().reset_index()
 
     return [
         {
@@ -476,7 +675,10 @@ def cyclone_track(sid: str):
     ].sort_values("ISO_TIME")
 
     if sub.empty:
-        return {"name": "", "points": []}
+        return {
+            "name": "",
+            "points": [],
+        }
 
     return {
         "name": str(sub.iloc[0]["NAME"]),
@@ -485,7 +687,11 @@ def cyclone_track(sid: str):
                 "lat": float(r.LAT),
                 "lon": float(r.LON),
                 "time": str(r.ISO_TIME),
-                "wind": float(r.wind) if pd.notna(r.wind) else None,
+                "wind": (
+                    float(r.wind)
+                    if pd.notna(r.wind)
+                    else None
+                ),
                 "category": wind_category(r.wind),
             }
             for r in sub.itertuples()
@@ -502,13 +708,17 @@ def cyclone_explain(sid: str):
     ].sort_values("ISO_TIME")
 
     if sub.empty:
-        return {"text": "Cyclone data not found."}
+        return {
+            "text": "Cyclone data not found."
+        }
 
     name = str(sub.iloc[0]["NAME"])
     year = int(sub.iloc[0]["YEAR"])
     subbasin = str(sub.iloc[0]["SUBBASIN"])
 
-    wind_data = sub[sub["wind"].notna()]
+    wind_data = sub[
+        sub["wind"].notna()
+    ]
 
     if wind_data.empty:
         return {
@@ -518,57 +728,102 @@ def cyclone_explain(sid: str):
             )
         }
 
-    peak = wind_data.loc[wind_data["wind"].idxmax()]
+    peak = wind_data.loc[
+        wind_data["wind"].idxmax()
+    ]
 
     return {
         "text": (
-            f"{name} ({year}, {subbasin}) peaked at {peak['wind']:.0f} kt "
+            f"{name} ({year}, {subbasin}) peaked at "
+            f"{peak['wind']:.0f} kt "
             f"({wind_category(peak['wind'])}) near "
-            f"{peak['LAT']:.1f}°N, {peak['LON']:.1f}°E."
+            f"{peak['LAT']:.1f}°N, "
+            f"{peak['LON']:.1f}°E."
         )
     }
 
 
+# ============================================================
+# OCEAN EXPLANATION
+# ============================================================
+
 @app.get("/slice/explain")
-def slice_explain(variable: str, depth_idx: int = 0, time_idx: int = 0):
+def slice_explain(
+    variable: str,
+    depth_idx: int = 0,
+    time_idx: int = 0,
+):
     if variable not in ds.data_vars:
-        return {"text": f"Variable '{variable}' is not available."}
+        return {
+            "text": (
+                f"Variable '{variable}' is not available."
+            )
+        }
 
     # Safety checks
     if depth_idx < 0 or depth_idx >= len(ds.depth):
-        return {"text": "Invalid depth selection."}
+        return {
+            "text": "Invalid depth selection."
+        }
 
     if time_idx < 0 or time_idx >= len(ds.time):
-        return {"text": "Invalid time selection."}
+        return {
+            "text": "Invalid time selection."
+        }
 
     da = ds[variable].isel(
         depth=depth_idx,
-        time=time_idx
+        time=time_idx,
     )
 
     values = da.values
-    valid_values = values[np.isfinite(values)]
+    valid_values = values[
+        np.isfinite(values)
+    ]
 
     if len(valid_values) == 0:
         return {
-            "text": "No valid ocean data is available for this selection.",
-            "date": str(ds.time.values[time_idx])[:10],
-            "depth": float(ds.depth.values[depth_idx]),
+            "text": (
+                "No valid ocean data is available "
+                "for this selection."
+            ),
+            "date": str(
+                ds.time.values[time_idx]
+            )[:10],
+            "depth": float(
+                ds.depth.values[depth_idx]
+            ),
         }
 
-    val = float(np.mean(valid_values))
+    val = float(
+        np.mean(valid_values)
+    )
 
-    depth_m = float(ds.depth.values[depth_idx])
-    date_str = str(ds.time.values[time_idx])[:10]
+    depth_m = float(
+        ds.depth.values[depth_idx]
+    )
+
+    date_str = str(
+        ds.time.values[time_idx]
+    )[:10]
 
     # Temperature
     if variable == "thetao":
         if val > 28:
-            note = "The selected region has relatively warm surface-to-upper-ocean temperatures."
+            note = (
+                "The selected region has relatively warm "
+                "surface-to-upper-ocean temperatures."
+            )
         elif val < 20:
-            note = "The selected region has relatively cool temperatures at this depth."
+            note = (
+                "The selected region has relatively cool "
+                "temperatures at this depth."
+            )
         else:
-            note = "The selected region shows moderate temperatures at this depth."
+            note = (
+                "The selected region shows moderate "
+                "temperatures at this depth."
+            )
 
         text = (
             f"Average sea temperature at {depth_m:.1f} m "
@@ -578,11 +833,18 @@ def slice_explain(variable: str, depth_idx: int = 0, time_idx: int = 0):
     # Salinity
     elif variable == "so":
         if val > 35:
-            note = "The average salinity is relatively high."
+            note = (
+                "The average salinity is relatively high."
+            )
         elif val < 34:
-            note = "The average salinity is relatively low."
+            note = (
+                "The average salinity is relatively low."
+            )
         else:
-            note = "The average salinity is within a moderate range."
+            note = (
+                "The average salinity is within "
+                "a moderate range."
+            )
 
         text = (
             f"Average salinity at {depth_m:.1f} m "
@@ -591,30 +853,49 @@ def slice_explain(variable: str, depth_idx: int = 0, time_idx: int = 0):
 
     # East-west current
     elif variable == "uo":
-        direction = "eastward" if val >= 0 else "westward"
+        direction = (
+            "eastward"
+            if val >= 0
+            else "westward"
+        )
 
         text = (
-            f"Average east-west current component at {depth_m:.1f} m "
-            f"on {date_str} is {abs(val):.2f} m/s, directed {direction}."
+            f"Average east-west current component at "
+            f"{depth_m:.1f} m on {date_str} is "
+            f"{abs(val):.2f} m/s, directed {direction}."
         )
 
     # North-south current
     elif variable == "vo":
-        direction = "northward" if val >= 0 else "southward"
+        direction = (
+            "northward"
+            if val >= 0
+            else "southward"
+        )
 
         text = (
-            f"Average north-south current component at {depth_m:.1f} m "
-            f"on {date_str} is {abs(val):.2f} m/s, directed {direction}."
+            f"Average north-south current component at "
+            f"{depth_m:.1f} m on {date_str} is "
+            f"{abs(val):.2f} m/s, directed {direction}."
         )
 
     # Current speed
     elif variable == "current_speed":
         if val > 0.8:
-            note = "This indicates relatively strong current activity."
+            note = (
+                "This indicates relatively strong "
+                "current activity."
+            )
         elif val > 0.3:
-            note = "This indicates moderate current activity."
+            note = (
+                "This indicates moderate "
+                "current activity."
+            )
         else:
-            note = "This indicates relatively calm current activity."
+            note = (
+                "This indicates relatively calm "
+                "current activity."
+            )
 
         text = (
             f"Average current speed at {depth_m:.1f} m "
@@ -624,8 +905,9 @@ def slice_explain(variable: str, depth_idx: int = 0, time_idx: int = 0):
     # Current direction
     elif variable == "current_dir":
         text = (
-            f"Average current direction at {depth_m:.1f} m "
-            f"on {date_str} is {val:.1f}°."
+            f"Average current direction at "
+            f"{depth_m:.1f} m on {date_str} "
+            f"is {val:.1f}°."
         )
 
     else:
