@@ -8,6 +8,8 @@
 <br/>
 
 ### 🔗 [**Live Demo → oceopsis.vercel.app**](https://oceopsis.vercel.app/)
+> [!NOTE]
+> This demo runs on a free-tier backend, so the **first load and each new data layer may take a few seconds** to respond (occasionally longer if the server has gone idle). All features are fully functional — Ocean, Argo, Glider, and Cyclone modes all work end-to-end. Thank you for your patience while it spins up! 🌊
 
 <br/>
 <br/>
