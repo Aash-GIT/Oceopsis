@@ -124,7 +124,7 @@ Instead of toggling between desktop GIS tools and 2D plan views, Oceopsis lets y
 
 ### 1. Clone it
 ```bash
-git clone https://github.com/<your-username>/oceopsis.git
+git clone https://github.com/Aash-GIT/oceopsis.git
 cd oceopsis
 ```
 
