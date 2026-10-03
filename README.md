@@ -7,6 +7,11 @@
 
 <br/>
 
+### 🔗 [**Live Demo → oceopsis.vercel.app**](https://oceopsis.vercel.app/)
+
+<br/>
+<br/>
+
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![Vite](https://img.shields.io/badge/Vite-Build-646CFF?style=for-the-badge&logo=vite&logoColor=white)
 ![CesiumJS](https://img.shields.io/badge/CesiumJS-3D%20Globe-00C8FF?style=for-the-badge&logo=cesium&logoColor=white)
@@ -18,6 +23,7 @@
 ![Render](https://img.shields.io/badge/API%20on-Render-46E3B7?style=flat-square&logo=render)
 ![License](https://img.shields.io/badge/license-MIT-informational?style=flat-square)
 ![Status](https://img.shields.io/badge/status-active%20development-success?style=flat-square)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-oceopsis.vercel.app-4285F4?style=for-the-badge&logo=vercel&logoColor=white)](https://oceopsis.vercel.app/)
 
 <br/>
 
